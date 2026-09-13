@@ -2,10 +2,16 @@
 #SBATCH --job-name=mandel-g20
 #SBATCH --nodes=1
 #SBATCH --exclusive
+#SBATCH --time=02:00:00
 #SBATCH --output=slurm-%j.out
 #
 # --exclusive e o que mais importa aqui: sem ele outro grupo pode estar rodando
 # no mesmo no e os tempos ficam sem sentido para calcular speed-up.
+#
+# TEMPO: sem --time o job herda o limite padrao da fila, que pode ser curto o
+# bastante para o Slurm matar a medicao no meio. Duas horas e folgado para a
+# bateria completa. Se o sbatch reclamar que excede o maximo da particao, veja
+# a coluna TIMELIMIT do "sinfo" e reduza este valor.
 #
 # PARTICAO: sem --partition o Slurm usa a fila padrao do cluster, que e o que
 # queremos na duvida. Para escolher outra, rode "sinfo" no atlantica, veja o
