@@ -1,0 +1,212 @@
+% ============================================================================
+%  Relatorio Tecnico - Trabalho 1 de Programacao Paralela
+%  Formato exigido:
+%    pag. 1  -> coluna DUPLA, margens 1cm, fonte 10, somente texto
+%    pag. 2  -> coluna SIMPLES: tabelas (tempo, speed-up, eficiencia) + graficos
+%    pag. 3+ -> coluna SIMPLES: codigo fonte
+%  Compilar com pdflatex (ou colar no Overleaf).
+% ============================================================================
+\documentclass[10pt,a4paper,twocolumn]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage[margin=1cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{multicol}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{3pt}
+\setlength{\columnsep}{6mm}
+\pagestyle{empty}
+
+% ---- Estilo para a listagem de codigo C ------------------------------------
+\lstdefinestyle{codigoC}{
+  language=C, basicstyle=\ttfamily\scriptsize, numbers=left,
+  numberstyle=\tiny\color{gray}, keywordstyle=\color{blue!70!black},
+  commentstyle=\itshape\color{green!40!black}, stringstyle=\color{red!60!black},
+  showstringspaces=false, breaklines=true, tabsize=4,
+  columns=fullflexible, lineskip=-1pt,
+  morekeywords={\#pragma,omp,parallel,for,schedule,reduction,shared,default}
+}
+
+\begin{document}
+
+% ============================ CABECALHO =====================================
+\twocolumn[
+\begin{center}
+  {\large\bfseries Paralelização do Conjunto de Mandelbrot com OpenMP}\\[2pt]
+  {\small Trabalho 1 --- Programação Paralela --- Grupo 20 (conta LAD \texttt{cp32020})}\\[1pt]
+  {\small NOME DO INTEGRANTE 1 \quad NOME DO INTEGRANTE 2 \quad NOME DO INTEGRANTE 3}\\[1pt]
+  {\small Escola Politécnica --- PUCRS \quad --- \quad \today}
+\end{center}
+\vspace{4mm}
+]
+
+% ======================== PAGINA 1: TEXTO ===================================
+
+\textbf{1. O problema e seu potencial de paralelização.}
+% TODO: descrever o Mandelbrot, o kernel z_{n+1}=z_n^2+c, o criterio de escape
+% |z|>2 e o limite max_iter. Enfatizar:
+%  - independencia total entre pixels (nenhuma dependencia de dados);
+%  - eixos possiveis de paralelizacao: pixel, linha, bloco de linhas;
+%  - escolha do laco de LINHAS (granularidade grossa, escrita em faixas
+%    disjuntas do vetor, sem falso compartilhamento entre threads);
+%  - custo por pixel MUITO variavel -> desbalanceamento intrinseco de carga,
+%    que e' o ponto central deste trabalho.
+
+\textbf{2. Ambiente de execução e metodologia.}
+% TODO preencher com os dados de results/maquina.txt:
+%  - nodo do cluster atlantica (LAD/PUCRS), modelo da CPU, N nucleos fisicos;
+%  - gcc versao X, flags -O2 -std=c99 [-fopenmp];
+%  - T(1) medido com o binario SEQUENCIAL (compilado SEM -fopenmp), 1 nucleo,
+%    a partir do MESMO fonte e das MESMAS flags -O2: sem isso o speed-up sairia
+%    inflado por comparar um sequencial pior compilado com um paralelo melhor;
+%  - OMP_PROC_BIND=close e OMP_PLACES=cores (sem migracao, sem hyper-threads);
+%  - cada ponto = MEDIANA de 3 execucoes (a mediana resiste a uma execucao
+%    contaminada por outro processo no no, a media nao);
+%  - job submetido com sbatch --exclusive: sem exclusividade outro grupo pode
+%    dividir o no e os tempos perdem sentido;
+%  - validacao por checksum: a soma das iteracoes e' identica em todas as
+%    versoes e contagens de threads, garantindo corretude do paralelismo.
+
+\textbf{3. Diretivas OpenMP utilizadas.}
+% TODO: explicar cada clausula aplicada em calcula_mandelbrot():
+%  - #pragma omp parallel for  no laco de LINHAS (e nao no de colunas: menos
+%    aberturas de regiao paralela e granularidade maior);
+%  - default(none): forca a classificacao explicita de cada variavel;
+%  - reduction(+:soma): o checksum e' o unico acumulador compartilhado; a
+%    reducao evita uma secao critica que serializaria o laco;
+%  - variaveis do laco interno declaradas no escopo interno -> privadas por
+%    construcao (mais seguro que listar em private());
+%  - schedule(runtime) + omp_set_schedule() chamado a partir da linha de
+%    comando (-s/-c): permite comparar static/dynamic/guided e varios chunks
+%    com o BINARIO IDENTICO, sem recompilar, o que torna a Tabela 3 uma
+%    comparacao justa (nenhuma diferenca de codigo gerado entre as medicoes).
+% Otimizacoes: |z|^2 > 4 no lugar de sqrt; reuso de zx2/zy2 (2 multiplicacoes
+% por iteracao); kernel inline e sem acesso a memoria no laco quente.
+
+\textbf{4. Análise dos resultados --- escalabilidade forte.}
+% TODO: NAO repetir numeros do grafico; EXPLICAR:
+%  - por que static satura/perde eficiencia: as linhas centrais atravessam o
+%    interior do conjunto e custam max_iter por pixel, enquanto as linhas das
+%    bordas escapam cedo. Com blocos contiguos, as threads que recebem o meio
+%    da imagem trabalham muito mais e as demais ficam ociosas no barreira
+%    implicita do "for" -> o tempo total e' ditado pela thread mais lenta;
+%  - por que dynamic,1 / guided recuperam a eficiencia: redistribuem linhas sob
+%    demanda, ao custo de sincronizacao na fila de tarefas;
+%  - de onde vem a perda residual em p alto (fracao serial da alocacao/inicio
+%    da regiao paralela pela lei de Amdahl, contencao de memoria, granularidade
+%    final insuficiente quando ha poucas linhas por thread).
+
+\textbf{5. Análise --- escalabilidade fraca.}
+% TODO: explicar que a carga por thread e' mantida constante escalando as duas
+% dimensoes por sqrt(p) sobre a MESMA regiao do plano, o que preserva a
+% distribuicao estatistica do custo por pixel. Discutir por que a eficiencia
+% fraca se sustenta melhor (ou nao) que a forte: mais linhas por thread ->
+% melhor granularidade e menor peso relativo da parte serial; em contrapartida
+% cresce a pressao sobre memoria/cache (imagem de p x 1,92 Mpixels).
+
+\textbf{6. Balanceamento de carga: escalonadores e chunks.}
+% TODO: comentar a Tabela 3 explicando o compromisso entre desbalanceamento
+% (chunk grande) e sobrecusto de escalonamento (chunk pequeno demais), e
+% justificar a politica escolhida como padrao.
+
+\textbf{7. Uso de ferramentas de IA.}
+% TODO: declarar honestamente como a IA foi usada (o enunciado exige):
+% ex. "o Claude Code foi usado para estruturar o codigo instrumentado, os
+% scripts de medicao e a formatacao do relatorio, e para revisar o codigo do
+% grupo (onde apontou um erro de compilacao com -std=c11 estrito); o grupo
+% definiu o problema, validou os resultados e escreveu a analise."
+
+\textbf{8. Conclusão.}
+% TODO: 3-4 linhas.
+
+% ==================== PAGINA 2: TABELAS E GRAFICOS ==========================
+\onecolumn
+\newpage
+
+\begin{center}\textbf{\large Tabelas e gráficos}\end{center}
+
+\textbf{Tabela 1 --- Escalabilidade forte.} Imagem fixa de
+4096$\times$4096 pixels, \texttt{max\_iter} = 2000, \texttt{schedule(dynamic,1)}.
+$T(1)$ é o binário \emph{sequencial} (compilado sem \texttt{-fopenmp}), em um
+único núcleo. Mediana de 3 execuções. $S(p) = T_{seq}/T(p)$ e
+$E(p) = S(p)/p$.\\[2pt]
+\begin{tabular}{lrrrr}
+\toprule
+Versão & Threads & Tempo (s) & Speed-up & Eficiência (\%) \\
+\midrule
+sequencial & 1  & & --- & --- \\
+paralela   & 1  & & & \\
+paralela   & 2  & & & \\
+paralela   & 4  & & & \\
+paralela   & 8  & & & \\
+paralela   & 16 & & & \\
+% acrescentar linhas ate o total de nucleos do no
+\bottomrule
+\end{tabular}
+
+\vspace{6mm}
+\textbf{Tabela 2 --- Escalabilidade fraca.} Carga por thread constante:
+1024$\times$1024 pixels por thread, lado escalado por $\sqrt{p}$ sobre a
+\emph{mesma} janela do plano complexo. Aqui
+$S(p) = p \cdot T_{seq}/T(p)$ e $E(p) = T_{seq}/T(p)$ --- ou seja, a
+eficiência mede o quanto o tempo conseguiu permanecer constante.\\[2pt]
+\begin{tabular}{rlrrr}
+\toprule
+Threads & Imagem & Mpixels & Tempo (s) & Eficiência (\%) \\
+\midrule
+1  & 1024$\times$1024 & 1,05  & & \\
+2  & 1448$\times$1448 & 2,10  & & \\
+4  & 2048$\times$2048 & 4,19  & & \\
+8  & 2896$\times$2896 & 8,39  & & \\
+16 & 4096$\times$4096 & 16,78 & & \\
+\bottomrule
+\end{tabular}
+
+\vspace{6mm}
+\textbf{Tabela 3 --- Balanceamento de carga: escalonador e granularidade.}
+Todos os núcleos do nó, imagem 4096$\times$4096.\\[2pt]
+\begin{tabular}{llrr}
+\toprule
+\texttt{schedule} & Chunk & Tempo (s) & Relativo ao melhor \\
+\midrule
+\texttt{static}  & padrão & & \\
+\texttt{static}  & 1  & & \\
+\texttt{static}  & 8  & & \\
+\texttt{static}  & 64 & & \\
+\texttt{dynamic} & 1  & & \\
+\texttt{dynamic} & 8  & & \\
+\texttt{dynamic} & 64 & & \\
+\texttt{guided}  & padrão & & \\
+\texttt{guided}  & 1  & & \\
+\bottomrule
+\end{tabular}
+
+\vspace{8mm}
+% Graficos gerados na planilha fornecida pelo professor, exportados como PNG/PDF.
+% \includegraphics[width=0.9\linewidth]{grafico_forte.png}
+% \includegraphics[width=0.9\linewidth]{grafico_fraca.png}
+
+% ==================== PAGINA 3+: CODIGO FONTE ===============================
+\newpage
+\begin{center}\textbf{\large Código fonte --- \texttt{mandelbrot.c}}\end{center}
+\lstinputlisting[style=codigoC]{../mandelbrot.c}
+
+\newpage
+\begin{center}\textbf{\large Script de medição --- \texttt{medir.sh}}\end{center}
+\lstinputlisting[style=codigoC,language=bash]{../medir.sh}
+
+\newpage
+\begin{center}\textbf{\large Análise dos resultados --- \texttt{analisar.sh}}\end{center}
+\lstinputlisting[style=codigoC,language=bash]{../analisar.sh}
+
+\newpage
+\begin{center}\textbf{\large Submissão ao Slurm --- \texttt{job.sh}}\end{center}
+\lstinputlisting[style=codigoC,language=bash]{../job.sh}
+
+\end{document}

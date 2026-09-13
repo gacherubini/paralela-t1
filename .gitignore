@@ -1,0 +1,14 @@
+# Binarios compilados
+mandelbrot_seq
+mandelbrot_par
+*.o
+*.pgm
+
+# Saidas de medicao (geradas no cluster)
+resultados/
+
+# Artefatos do LaTeX
+relatorio/*.aux
+relatorio/*.log
+relatorio/*.out
+relatorio/*.synctex.gz

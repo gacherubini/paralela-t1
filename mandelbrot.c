@@ -17,6 +17,10 @@
  * IDENTICO entre a versao sequencial e a paralela: e a prova de corretude.
  */
 
+/* Precisa vir ANTES dos includes: habilita clock_gettime/CLOCK_MONOTONIC e
+ * getopt/optarg mesmo quando o fonte e compilado com -std=c11 estrito. */
+#define _POSIX_C_SOURCE 200809L
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
