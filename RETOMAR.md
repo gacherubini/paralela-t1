@@ -12,6 +12,7 @@ Conta LAD: `cp32020` · atlantica.lad.pucrs.br
 | `medir.sh` | Coleta os tempos → `resultados/{forte,fraca,sched}.csv`. Detecta os núcleos do nó. |
 | `analisar.sh` | Lê os CSVs e imprime as tabelas com speed-up e eficiência. |
 | `job.sh` | Submissão ao Slurm: `sbatch job.sh`. Roda make + medir + analisar. |
+| `graficos.py` | Gera os gráficos de escalabilidade (PDF vetorial + PNG). |
 | `relatorio/relatorio.tex` | Esqueleto no formato exigido. TODOs marcam cada seção. |
 
 ## Como rodar no cluster
@@ -40,8 +41,10 @@ PARTITION e descomente a linha `--partition` no `job.sh`.
 ## O que falta
 
 - [ ] Rodar o `sbatch job.sh` no cluster e trazer `resultados/`.
-- [ ] Nomes dos integrantes no cabeçalho do relatório.
-- [ ] Planilha de gráficos do professor (não está em `docs/`; baixar do Moodle).
+- [x] Nomes dos integrantes no cabeçalho (Gabriel Coelho, Gabriel Cherubini).
+- [x] Gráficos: a planilha do professor não foi encontrada, então `graficos.py`
+      gera os dois exigidos (forte e fraca), cada um com speed-up e eficiência
+      e a linha do ideal para comparação.
 - [ ] Preencher as tabelas, escrever a análise e gerar o PDF.
 
 ## Correções aplicadas sobre a primeira versão
@@ -60,6 +63,11 @@ PARTITION e descomente a linha `--partition` no `job.sh`.
    Slurm usa a fila padrão. Conferir com `sinfo` antes de fixar um nome.
 5. `job.sh` agora salva `resultados/maquina.txt` (CPU, memória, gcc) — o
    relatório precisa identificar onde as medições foram feitas.
+6. **Escalabilidade forte media só `dynamic`.** Agora varre `static`,
+   `dynamic,1` e `guided` ao longo de toda a escada de threads. Sem isso o
+   gráfico teria uma linha só e o efeito do desbalanceamento — o motivo de ter
+   escolhido o Mandelbrot — ficaria invisível. No teste local com 4 threads:
+   `static` 52,5% de eficiência contra 93,3% do `dynamic`.
 
 ## Decisões de projeto para citar no relatório
 
@@ -79,3 +87,17 @@ PARTITION e descomente a linha `--partition` no `job.sh`.
 - **Mediana de 3**, não média: uma execução contaminada distorce a média.
 - **Checksum idêntico** entre sequencial e paralelo, em toda contagem de
   threads, mais `cmp` das imagens: é a prova de corretude.
+
+## Gráficos
+
+`python3 graficos.py [dir]` lê `resultados/{forte,fraca}.csv` e gera
+`grafico_forte.pdf` e `grafico_fraca.pdf` (mais PNGs para conferir na tela).
+O `relatorio.tex` já inclui os PDFs — vetoriais, não perdem qualidade.
+
+Cada figura tem dois painéis, speed-up e eficiência, em eixos separados de
+propósito: as duas grandezas têm escalas diferentes e sobrepô-las num eixo duplo
+é o erro clássico de gráfico. A linha tracejada cinza é o ideal ($S(p)=p$ na
+forte, tempo constante na fraca).
+
+Precisa de matplotlib: `pip install matplotlib`. Se o nó do cluster não tiver,
+o `job.sh` avisa e segue — é só rodar o script na máquina local depois.

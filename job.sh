@@ -34,3 +34,13 @@ mkdir -p resultados
 make clean && make
 ./medir.sh
 ./analisar.sh | tee resultados/tabelas.txt
+
+# Os graficos precisam de matplotlib, que pode nao existir no no do cluster.
+# Se faltar, nao e problema: basta rodar "python3 graficos.py" na maquina local
+# depois de trazer o diretorio resultados/.
+if python3 -c "import matplotlib" 2>/dev/null; then
+    python3 graficos.py
+else
+    echo "matplotlib ausente no no: gere os graficos localmente com"
+    echo "    python3 graficos.py resultados"
+fi

@@ -40,7 +40,7 @@
 \begin{center}
   {\large\bfseries Paralelização do Conjunto de Mandelbrot com OpenMP}\\[2pt]
   {\small Trabalho 1 --- Programação Paralela --- Grupo 20 (conta LAD \texttt{cp32020})}\\[1pt]
-  {\small NOME DO INTEGRANTE 1 \quad NOME DO INTEGRANTE 2 \quad NOME DO INTEGRANTE 3}\\[1pt]
+  {\small Gabriel Coelho \quad Gabriel Cherubini}\\[1pt]
   {\small Escola Politécnica --- PUCRS \quad --- \quad \today}
 \end{center}
 \vspace{4mm}
@@ -187,10 +187,21 @@ Todos os núcleos do nó, imagem 4096$\times$4096.\\[2pt]
 \bottomrule
 \end{tabular}
 
-\vspace{8mm}
-% Graficos gerados na planilha fornecida pelo professor, exportados como PNG/PDF.
-% \includegraphics[width=0.9\linewidth]{grafico_forte.png}
-% \includegraphics[width=0.9\linewidth]{grafico_fraca.png}
+\vspace{6mm}
+% Graficos gerados por graficos.py a partir dos mesmos CSVs das tabelas acima.
+% Sao PDFs vetoriais: nao perdem qualidade na impressao.
+\begin{center}
+  \includegraphics[width=\linewidth]{../resultados/grafico_forte.pdf}\\[4mm]
+  \includegraphics[width=\linewidth]{../resultados/grafico_fraca.pdf}
+\end{center}
+
+\small
+\textbf{Figura 1} (acima) --- escalabilidade forte: problema de tamanho fixo.
+A linha tracejada é o speed-up ideal $S(p) = p$; o afastamento em relação a ela
+é o custo do paralelismo.
+\textbf{Figura 2} --- escalabilidade fraca: carga por thread constante, em que
+o ideal é o tempo permanecer inalterado (eficiência de 100\%).
+\normalsize
 
 % ==================== PAGINA 3+: CODIGO FONTE ===============================
 \newpage

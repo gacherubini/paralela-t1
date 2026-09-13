@@ -12,12 +12,14 @@ cd "$(dirname "$0")"
 echo "=================== ESCALABILIDADE FORTE ==================="
 awk -F';' 'NR>1 {
     if ($1 == "seq") { tseq = $8; ck = $9;
-        printf "%-9s %-8s %12s %10s %12s\n", "versao", "threads", "tempo(s)", "speedup", "eficiencia";
-        printf "%-9s %-8d %12.3f %10s %12s\n", "seq", 1, tseq, "-", "-";
+        printf "%-10s %-8s %12s %10s %12s\n", "schedule", "threads", "tempo(s)", "speedup", "eficiencia";
+        printf "%-10s %-8d %12.3f %10s %12s\n", "sequencial", 1, tseq, "-", "-";
         next }
+    rotulo = $3 (($4 == 0) ? "" : "," $4);
+    if (rotulo != anterior) { printf "%s\n", "  --"; anterior = rotulo }
     s = tseq / $8; e = s / $2;
-    if ($9 != ck) aviso = aviso sprintf("  ATENCAO: checksum difere com %d threads\n", $2);
-    printf "%-9s %-8d %12.3f %10.2f %11.1f%%\n", "par", $2, $8, s, e*100
+    if ($9 != ck) aviso = aviso sprintf("  ATENCAO: checksum difere (%s, %d threads)\n", rotulo, $2);
+    printf "%-10s %-8d %12.3f %10.2f %11.1f%%\n", rotulo, $2, $8, s, e*100
 } END { if (aviso != "") printf "\n%s", aviso }' resultados/forte.csv
 
 echo

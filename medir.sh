@@ -37,6 +37,13 @@ LADO_BASE=${LADO_BASE:-1024}  # lado por thread na escalabilidade FRACA
 SCHED_FORTE=${SCHED_FORTE:-dynamic}
 CHUNK_FORTE=${CHUNK_FORTE:-1}
 
+# Escalonadores varridos na escalabilidade FORTE. Medir os tres ao longo de
+# TODA a escada de threads (e nao so com o no cheio) e o que revela o efeito do
+# desbalanceamento: o static abre em relacao ao ideal conforme p cresce, o
+# dynamic acompanha. Com um escalonador so o grafico teria uma linha unica e
+# essa comparacao ficaria invisivel.
+SCHEDS_FORTE=${SCHEDS_FORTE:-"static:0 dynamic:1 guided:0"}
+
 cd "$(dirname "$0")"
 mkdir -p resultados
 
@@ -70,12 +77,16 @@ echo -n "   seq ... "
 mediana ./mandelbrot_seq -w "$LADO" -a "$LADO" -i "$ITER" >> resultados/forte.csv
 tail -1 resultados/forte.csv | cut -d';' -f8
 
-for t in $THREADS; do
-    echo -n "   ${t} threads ... "
-    mediana env OMP_NUM_THREADS="$t" ./mandelbrot_par \
-        -w "$LADO" -a "$LADO" -i "$ITER" \
-        -s "$SCHED_FORTE" -c "$CHUNK_FORTE" >> resultados/forte.csv
-    tail -1 resultados/forte.csv | cut -d';' -f8
+for combo in $SCHEDS_FORTE; do
+    sched=${combo%%:*}
+    chunk=${combo##*:}
+    for t in $THREADS; do
+        echo -n "   ${sched} chunk=${chunk} ${t} threads ... "
+        mediana env OMP_NUM_THREADS="$t" ./mandelbrot_par \
+            -w "$LADO" -a "$LADO" -i "$ITER" \
+            -s "$sched" -c "$chunk" >> resultados/forte.csv
+        tail -1 resultados/forte.csv | cut -d';' -f8
+    done
 done
 
 # ---------------------------------------------------------------- fraca -----
