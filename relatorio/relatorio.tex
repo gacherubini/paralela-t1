@@ -58,10 +58,9 @@ O conjunto de Mandelbrot calcula, para cada pixel $c$ de uma janela do plano
 complexo, a iteração $z_{n+1} = z_n^2 + c$ até $|z| > 2$ ou $max\_iter = 2000$;
 o tom do pixel é proporcional às iterações executadas. Os pixels são
 totalmente independentes: não há dependência de dados nem comunicação. Os
-eixos possíveis de paralelização são o pixel, a linha e o bloco de linhas;
-escolhemos o laço de \textbf{linhas}: granularidade grossa, cada thread
-escreve uma faixa disjunta da imagem, sem falso compartilhamento e sem
-sincronização dentro do laço. O custo por pixel varia até três ordens de
+eixos possíveis são pixel, linha e bloco; escolhemos o laço de
+\textbf{linhas}: cada thread escreve faixa disjunta, sem falso
+compartilhamento nem sincronização. O custo por pixel varia até três ordens de
 grandeza: pontos fora do conjunto escapam em poucas iterações, pontos dentro
 custam $max\_iter$ cheias. Como o interior do conjunto concentra-se no centro
 da janela, as linhas centrais são muito mais caras que as das bordas: um
@@ -72,79 +71,69 @@ deste trabalho.
 Medições no nó atlantica05 do cluster do LAD/PUCRS: 2$\times$ Xeon E5520 de
 2,27\,GHz (8 núcleos físicos, 16 threads), 15\,GB de RAM, gcc 9.4.0 com
 \texttt{-O2}. O tempo de referência $T(1)$ vem do binário \textbf{sequencial}
-(o mesmo fonte compilado sem \texttt{-fopenmp}) em um núcleo, o que evita o
-erro clássico de inflar o speed-up comparando um sequencial pior compilado
-com um paralelo melhor. Fixamos \texttt{OMP\_PLACES=cores} e
-\texttt{OMP\_PROC\_BIND=close} (threads presas aos núcleos, sem migração
-entre sockets); o efeito das hyper-threads é avaliado à parte, no ponto de
-16 threads. Cada ponto é a \textbf{mediana de 3 execuções}, robusta a uma
-execução contaminada por outro processo no nó. Os jobs rodaram com
-\texttt{sbatch --exclusive}, em nó dedicado. A corretude é garantida pelo
-checksum (soma das iterações, 7591159335) \textbf{idêntico} em todas as
-versões e contagens de threads, além da comparação binária das imagens.
+(o mesmo fonte compilado sem \texttt{-fopenmp}) em um núcleo, evitando
+speed-up inflado. Fixamos \texttt{OMP_PLACES=cores} e
+\texttt{OMP_PROC_BIND=close} (sem migração entre sockets); o efeito das
+hyper-threads é avaliado à parte, no ponto de 16 threads. Cada ponto é a
+\textbf{mediana de 3 execuções}, robusta a execuções contaminadas. Os jobs
+rodaram com \texttt{sbatch --exclusive}, em nó dedicado. A corretude é
+garantida pelo checksum (soma das iterações, 7591159335) \textbf{idêntico} em
+todas as versões e contagens de threads, além da comparação binária das imagens.
 
 \textbf{3. Diretivas OpenMP utilizadas.}
-Uma região \texttt{\#pragma omp parallel for} sobre o laço de linhas (e não
-sobre colunas: menos aberturas de região paralela e granularidade maior),
-com \texttt{schedule(runtime)}: escalonador e chunk vêm de
-\texttt{omp\_set\_schedule}, escolhidos por linha de comando, o que permite
+Uma região \texttt{\#pragma omp parallel for} sobre o laço de linhas
+(granularidade maior), com \texttt{schedule(runtime)}: escalonador e chunk vêm
+de \texttt{omp_set_schedule}, escolhidos por linha de comando, o que permite
 comparar static, dynamic e guided com o \textbf{binário idêntico}, sem
-recompilar. A cláusula \texttt{reduction(+:checksum)} trata o único
-acumulador compartilhado, evitando um \texttt{atomic} ou seção crítica no
-laço quente, que serializaria a execução. As variáveis do laço interno são
-declaradas no escopo interno, logo privadas por construção, sem risco de
-compartilhamento acidental. Otimizações: teste $|z|^2 > 4$ em vez de raiz
-quadrada; passo no plano complexo pré-calculado fora do laço; núcleo inline
+recompilar. A cláusula \texttt{reduction(+:checksum)} trata o único acumulador
+compartilhado, evitando um \texttt{atomic} ou seção crítica no laço quente,
+que serializaria a execução. As variáveis do laço interno são declaradas no
+escopo interno, logo privadas por construção, sem risco de compartilhamento
+acidental. Otimizações: teste $|z|^2 > 4$ (sem raiz quadrada) e núcleo inline
 sem acessos a memória no laço interno.
 
 \textbf{4. Análise dos resultados --- escalabilidade forte.}
 Com \texttt{dynamic,1} a curva é quase linear até 8 threads (S=6,90,
 E=86,3\%): as linhas caras são redistribuídas sob demanda e nenhuma thread
-espera na barreira implícita do \texttt{for}. A perda residual vem da fração
-serial (alocação e abertura da região paralela, lei de Amdahl) e da contenção
-de memória. O \texttt{static} colapsa (E=47,6\% em 4 threads, 36,7\% em 8):
-blocos contíguos entregam as linhas centrais, caras, sempre às mesmas
-threads, e o tempo total é ditado pela mais lenta. O \texttt{guided} fica no
-meio (57,1\% em 8 threads): seus chunks decrescentes reagem tarde à
-concentração central do custo e ainda pagam sincronização. O paralelo com 1
-thread (48,3\,s) é $\sim$10\% mais lento que o sequencial (43,8\,s):
-sobrecusto do runtime OpenMP. \textbf{Hyper-threads (ponto 16 da Fig.~1):}
-o dynamic sobe de S=6,90 para 12,07 com E=75,4\%: a segunda thread de cada
-núcleo divide as unidades de execução, então o ganho é sublinear e o limite
-passa a ser o núcleo, não a distribuição de carga. O static em 16 threads
-alcança só 29,8\% de eficiência.
+espera na barreira implícita do \texttt{for}. A perda residual é a fração
+serial (Amdahl) e a contenção de memória. O \texttt{static} colapsa (E=47,6\%
+em 4 threads, 36,7\% em 8): blocos contíguos entregam as linhas centrais,
+caras, sempre às mesmas threads, e o tempo total é ditado pela mais lenta.
+O \texttt{guided} fica no meio (57,1\% em 8 threads): reage tarde à
+concentração central do custo. Com 1 thread o paralelo (48,3\,s) é $\sim$10\%
+mais lento que o sequencial: sobrecusto do runtime OpenMP.
+\textbf{Hyper-threads (ponto 16 da Fig.~1):} o dynamic sobe de S=6,90 para
+12,07 com E=75,4\%: a segunda thread de cada núcleo divide as unidades de
+execução, então o ganho é sublinear e o limite passa a ser o núcleo, não a
+distribuição de carga. O static em 16 threads alcança só 29,8\% de eficiência.
 
 \textbf{5. Análise --- escalabilidade fraca.}
 A carga por thread é mantida constante escalando o lado por $\sqrt{p}$ sobre
 a \textbf{mesma} janela do plano, o que preserva a distribuição estatística
-do custo por pixel (ampliar a região em vez da resolução mudaria a natureza
-do trabalho). O tempo vai de 2,75\,s a 3,18\,s até 8 threads (E=86,5\%): a
-eficiência se sustenta melhor que na forte porque há mais linhas por thread
-e a parte serial pesa menos, em troca de pressão crescente sobre cache e
-memória (imagem de 1,0 a 8,4 Mpixels). Em 16 threads (16,8 Mpixels) a
-eficiência cai a 75,6\%: o mesmo efeito HT da forte, não falta de
+do custo por pixel (ampliar a região mudaria a natureza do trabalho). O tempo
+vai de 2,75\,s a 3,18\,s até 8 threads (E=86,5\%): a eficiência se sustenta
+melhor que na forte porque há mais linhas por thread, em troca de mais pressão
+sobre cache e memória (imagem de 1,0 a 8,4 Mpixels). Em 16 threads (16,8
+Mpixels) a eficiência cai a 75,6\%: o mesmo efeito HT da forte, não falta de
 paralelismo.
 
 \textbf{6. Balanceamento de carga: escalonadores e chunks.}
 Com 8 threads e 4096$^2$ (Tab.~3), o \texttt{static} padrão leva 14,95\,s
 (2,35$\times$ pior que o melhor): o grão em blocos contíguos recria o
-desbalanceamento. Com chunk 1 o static cai a 6,37\,s, igualando o dynamic: o
-grão unitário elimina o problema, ao custo de mais despachos. Chunk 64 volta
-a piorar (6,69\,s), pois o grão grosso reagrupa linhas caras. O dynamic é
-insensível entre chunk 1 e 8 (6,35\,s) e piora levemente com 64, quando a
+desbalanceamento. Com chunk 1 o static (6,37\,s) iguala o dynamic. Chunk 64
+volta a piorar (6,69\,s), pois o grão grosso reagrupa linhas caras. O dynamic
+é insensível entre chunk 1 e 8 (6,35\,s) e piora levemente com 64, quando a
 sincronização na fila passa a pesar. O guided fica em $\sim$9,5\,s
-(1,5$\times$): seu decrescimento geométrico não acompanha a concentração do
-custo no centro da imagem. Política adotada como padrão: \texttt{dynamic,1}.
+(1,5$\times$): não acompanha a concentração do custo no centro. Política
+adotada como padrão: \texttt{dynamic,1}.
 
 \textbf{7. Uso de ferramentas de IA.}
-Conforme exige o enunciado: Claude, da Anthropic (via Claude Code), na
-estrutura inicial do código instrumentado, nos scripts de medição, no
-diagnóstico do erro de compilação com \texttt{-std=c11} estrito e no gerador
-de gráficos e esqueleto deste relatório; Muse Spark (via OpenCode), nas
-instruções de acesso ao cluster, no job complementar do ponto HT, na geração
-dos gráficos e no preenchimento das tabelas. O grupo definiu o problema e a
-metodologia, executou e validou as medições no cluster e redigiu e revisou a
-análise.
+Conforme exige o enunciado: Claude, da Anthropic (via Claude Code): código
+instrumentado, scripts de medição, diagnóstico do erro de build
+(\texttt{-std=c11} estrito), gráficos e esqueleto do relatório; Muse Spark
+(via OpenCode): acesso ao cluster, job do ponto HT, gráficos e tabelas. O
+grupo definiu problema e metodologia, validou as medições e redigiu e revisou
+a análise.
 
 \textbf{8. Conclusão.}
 O Mandelbrot paraleliza trivialmente por linhas, mas só escala com
