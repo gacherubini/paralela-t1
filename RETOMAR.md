@@ -48,7 +48,9 @@ PARTITION e descomente a linha `--partition` no `job.sh`.
 - [x] Gráficos: a planilha do professor não foi encontrada, então `graficos.py`
       gera os dois exigidos (forte e fraca), cada um com speed-up e eficiência
       e a linha do ideal para comparação. Gerados em 13/set (`python graficos.py resultados`).
-- [ ] Preencher as tabelas, escrever a análise e gerar o PDF.
+- [x] Preencher as tabelas, escrever a análise e gerar o PDF (13/set:
+      `relatorio/relatorio.tex` preenchido; `resultados/relatorio-grupo20.pdf`
+      gerado localmente com texto em 2 colunas + tabelas + gráficos + código).
 
 ## Correções aplicadas sobre a primeira versão
 
