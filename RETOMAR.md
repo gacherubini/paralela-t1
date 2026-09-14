@@ -12,6 +12,7 @@ Conta LAD: `cp32020` · atlantica.lad.pucrs.br
 | `medir.sh` | Coleta os tempos → `resultados/{forte,fraca,sched}.csv`. Detecta os núcleos do nó. |
 | `analisar.sh` | Lê os CSVs e imprime as tabelas com speed-up e eficiência. |
 | `job.sh` | Submissão ao Slurm: `sbatch job.sh`. Roda make + medir + analisar. |
+| `ht.sh` | Complemento HT: anexa só o ponto 16 threads aos CSVs (`sbatch ht.sh`). |
 | `graficos.py` | Gera os gráficos de escalabilidade (PDF vetorial + PNG). |
 | `relatorio/relatorio.tex` | Esqueleto no formato exigido. TODOs marcam cada seção. |
 
@@ -40,11 +41,13 @@ PARTITION e descomente a linha `--partition` no `job.sh`.
 
 ## O que falta
 
-- [ ] Rodar o `sbatch job.sh` no cluster e trazer `resultados/`.
+- [x] Rodar o `sbatch job.sh` no cluster e trazer `resultados/` (13/set, nó
+      atlantica05, 2x Xeon E5520 = 8 núcleos físicos / 16 threads, gcc 9.4.0).
+- [x] Ponto HT: `sbatch ht.sh` no mesmo nó (dynamic 16t: S=12,07, E=75,4%).
 - [x] Nomes dos integrantes no cabeçalho (Gabriel Coelho, Gabriel Cherubini).
 - [x] Gráficos: a planilha do professor não foi encontrada, então `graficos.py`
       gera os dois exigidos (forte e fraca), cada um com speed-up e eficiência
-      e a linha do ideal para comparação.
+      e a linha do ideal para comparação. Gerados em 13/set (`python graficos.py resultados`).
 - [ ] Preencher as tabelas, escrever a análise e gerar o PDF.
 
 ## Correções aplicadas sobre a primeira versão
