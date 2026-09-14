@@ -9,13 +9,40 @@
 # mediana.
 set -euo pipefail
 
-THREADS=${THREADS:-"1 2 4 8 16"}
+# Descobre quantos nucleos FISICOS o no tem e monta a escada 1,2,4,8,...,N.
+# Deixar isso fixo em 16 desperdicaria os nucleos de um no maior, e o enunciado
+# pede explicitamente a maquina com o maior numero de nucleos possivel.
+# Contamos nucleos fisicos (e nao nproc) porque hyper-threads compartilham as
+# unidades de execucao: incluir a segunda thread de cada nucleo nao acrescenta
+# capacidade real de calculo e achataria artificialmente o speed-up.
+nucleos_fisicos() {
+    local c s
+    c=$(LC_ALL=C lscpu | awk -F: '/^Core\(s\) per socket/{gsub(/ /,"",$2); print $2}')
+    s=$(LC_ALL=C lscpu | awk -F: '/^Socket\(s\)/{gsub(/ /,"",$2); print $2}')
+    if [ -n "$c" ] && [ -n "$s" ]; then echo $((c * s)); else nproc; fi
+}
+
+escada_threads() {
+    local n=$1 t=1 lista=""
+    while [ "$t" -lt "$n" ]; do lista="$lista $t"; t=$((t * 2)); done
+    echo "$lista $n"
+}
+
+NUCLEOS=${NUCLEOS:-$(nucleos_fisicos)}
+THREADS=${THREADS:-$(escada_threads "$NUCLEOS")}
 REPS=${REPS:-3}
 ITER=${ITER:-2000}          # iteracoes maximas por pixel
 LADO=${LADO:-4096}          # lado da imagem na escalabilidade FORTE
 LADO_BASE=${LADO_BASE:-1024}  # lado por thread na escalabilidade FRACA
 SCHED_FORTE=${SCHED_FORTE:-dynamic}
 CHUNK_FORTE=${CHUNK_FORTE:-1}
+
+# Escalonadores varridos na escalabilidade FORTE. Medir os tres ao longo de
+# TODA a escada de threads (e nao so com o no cheio) e o que revela o efeito do
+# desbalanceamento: o static abre em relacao ao ideal conforme p cresce, o
+# dynamic acompanha. Com um escalonador so o grafico teria uma linha unica e
+# essa comparacao ficaria invisivel.
+SCHEDS_FORTE=${SCHEDS_FORTE:-"static:0 dynamic:1 guided:0"}
 
 cd "$(dirname "$0")"
 mkdir -p resultados
@@ -24,6 +51,10 @@ mkdir -p resultados
 # do no. Sem isso os tempos oscilam de execucao para execucao.
 export OMP_PLACES=cores
 export OMP_PROC_BIND=close
+
+echo "no: $(hostname) | nucleos fisicos: $NUCLEOS | nproc: $(nproc)"
+echo "threads testadas:$THREADS | reps: $REPS | iteracoes: $ITER"
+echo
 
 # Roda o comando REPS vezes e devolve a linha CSV com a mediana do tempo.
 mediana() {
@@ -46,12 +77,16 @@ echo -n "   seq ... "
 mediana ./mandelbrot_seq -w "$LADO" -a "$LADO" -i "$ITER" >> resultados/forte.csv
 tail -1 resultados/forte.csv | cut -d';' -f8
 
-for t in $THREADS; do
-    echo -n "   ${t} threads ... "
-    mediana env OMP_NUM_THREADS="$t" ./mandelbrot_par \
-        -w "$LADO" -a "$LADO" -i "$ITER" \
-        -s "$SCHED_FORTE" -c "$CHUNK_FORTE" >> resultados/forte.csv
-    tail -1 resultados/forte.csv | cut -d';' -f8
+for combo in $SCHEDS_FORTE; do
+    sched=${combo%%:*}
+    chunk=${combo##*:}
+    for t in $THREADS; do
+        echo -n "   ${sched} chunk=${chunk} ${t} threads ... "
+        mediana env OMP_NUM_THREADS="$t" ./mandelbrot_par \
+            -w "$LADO" -a "$LADO" -i "$ITER" \
+            -s "$sched" -c "$chunk" >> resultados/forte.csv
+        tail -1 resultados/forte.csv | cut -d';' -f8
+    done
 done
 
 # ---------------------------------------------------------------- fraca -----

@@ -2,7 +2,9 @@
 # Mesmo fonte, mesmas flags de otimizacao: a unica diferenca e o -fopenmp.
 
 CC      = gcc
-CFLAGS  = -O2 -Wall -Wextra -std=c11
+# gnu11 e nao c11: com -std=c11 estrito o glibc esconde os simbolos POSIX
+# (CLOCK_MONOTONIC, getopt/optarg) e o programa NAO compila.
+CFLAGS  = -O2 -Wall -Wextra -std=gnu11
 LDLIBS  = -lm
 
 all: mandelbrot_seq mandelbrot_par

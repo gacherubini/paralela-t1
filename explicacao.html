@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>T1 Paralela — Explicação completa (Grupo 20)</title>
+<style>
+  :root { --ink:#1a1a1a; --muted:#555; --accent:#0b5cad; --bg:#fff; --code:#f4f4f2; }
+  body { font-family: Georgia, 'Times New Roman', serif; color: var(--ink);
+         max-width: 820px; margin: 0 auto; padding: 24px 20px 64px; line-height: 1.65; }
+  h1 { font-size: 1.7em; text-align: center; margin-bottom: 0; }
+  .sub { text-align: center; color: var(--muted); margin: 4px 0 28px; }
+  h2 { font-size: 1.3em; color: var(--accent); border-bottom: 2px solid var(--accent);
+       padding-bottom: 4px; margin-top: 40px; }
+  h3 { font-size: 1.08em; margin-top: 24px; }
+  code, pre { font-family: Consolas, 'DejaVu Sans Mono', monospace; }
+  pre { background: var(--code); padding: 12px 14px; overflow-x: auto;
+        font-size: 0.85em; line-height: 1.5; border-left: 3px solid var(--accent); }
+  code.in { background: var(--code); padding: 1px 5px; font-size: 0.9em; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 0.92em; }
+  th, td { border: 1px solid #bbb; padding: 5px 8px; text-align: right; }
+  th { background: #eef4fa; }
+  td:first-child, th:first-child { text-align: left; }
+  .box { background: #f7fbff; border: 1px solid #bcd6ef; padding: 10px 14px; margin: 14px 0; }
+  .q { font-weight: bold; }
+  ul { padding-left: 22px; }
+  @media print { body { max-width: 100%; } pre { white-space: pre-wrap; } }
+</style>
+</head>
+<body>
+
+<h1>Paralelização do Mandelbrot com OpenMP</h1>
+<p class="sub">Trabalho 1 — Computação Paralela — Grupo 20 (cp32020) — PUCRS 2026/2<br>
+Gabriel Coelho &nbsp;·&nbsp; Gabriel Cherubini</p>
+
+<p>Este documento explica o trabalho <strong>desde o básico</strong>: o que é cada
+conceito, por que cada decisão foi tomada e como ler os resultados. Se você entende
+tudo que está aqui, consegue apresentar qualquer parte do trabalho.</p>
+
+<h2>0. Conceitos básicos (o mínimo para entender tudo)</h2>
+
+<h3>Processo, thread, núcleo</h3>
+<ul>
+  <li><strong>Núcleo (core)</strong>: a unidade física da CPU que executa instruções.
+    O nó usado tem <strong>8 núcleos físicos</strong> (2&times; Xeon E5520).</li>
+  <li><strong>Hyper-thread (HT)</strong>: cada núcleo físico finge ser 2 núcleos
+    lógicos (o <code class="in">nproc</code> mostra 16). As 2 threads dividem as
+    unidades de execução do núcleo: ajuda, mas <strong>não dobra</strong> o desempenho.</li>
+  <li><strong>Thread (software)</strong>: linha de execução dentro de um processo.
+    Criamos até 16 threads OpenMP e o sistema as distribui pelos núcleos.</li>
+</ul>
+
+<h3>Speed-up e eficiência</h3>
+<ul>
+  <li><strong>Speed-up</strong> S(p) = T<sub>seq</sub> / T(p): quantas vezes o programa
+    paralelo com <em>p</em> threads é mais rápido que o sequencial. Ideal: S(p) = p.</li>
+  <li><strong>Eficiência</strong> E(p) = S(p) / p: fração do ideal aproveitada.
+    100% = perfeito. Sempre cai quando <em>p</em> cresce (barreiras, parte serial,
+    comunicação, desbalanceamento).</li>
+  <li><strong>Lei de Amdahl</strong>: a parte do programa que é serial (não paralelizável)
+    limita o ganho máximo, não importa quantas threads você use.</li>
+</ul>
+
+<h3>Escalabilidade forte × fraca</h3>
+<ul>
+  <li><strong>Forte</strong>: tamanho do problema <strong>fixo</strong>, aumenta as threads.
+    Pergunta: "com mais mão de obra, o mesmo trabalho termina mais rápido?"</li>
+  <li><strong>Fraca</strong>: o trabalho <strong>cresce junto</strong> com as threads
+    (carga por thread constante). Pergunta: "consigo resolver um problema maior no mesmo
+    tempo?" O ideal é o tempo ficar constante (eficiência 100%).</li>
+</ul>
+
+<h2>1. O problema: conjunto de Mandelbrot</h2>
+<p>Para cada pixel <code class="in">c</code> da imagem, repetimos
+<code class="in">z = z² + c</code> (começando de z = 0) até <code class="in">|z| &gt; 2</code>
+(ponto "escapou") ou até <code class="in">max_iter = 2000</code> iterações. O tom do
+pixel é proporcional ao número de iterações. Três fatos importam:</p>
+<ol>
+  <li><strong>Pixels são 100% independentes</strong>: calcular um pixel nunca precisa do
+    resultado de outro. É o paralelismo mais fácil que existe ("embaraçosamente paralelo").</li>
+  <li><strong>O custo por pixel varia até 1000×</strong>: pixel fora do conjunto escapa em
+    poucas iterações; pixel dentro do conjunto roda as 2000 iterações inteiras.</li>
+  <li><strong>O interior do conjunto fica no centro da imagem</strong>: logo as linhas
+    centrais são muito mais caras que as das bordas — e ninguém sabe de antemão quais
+    linhas são caras. Esse <strong>desbalanceamento intrínseco</strong> é o tema central
+    do trabalho.</li>
+</ol>
+<p>Paralelizamos o <strong>laço das linhas</strong> (não pixel a pixel: abrir região
+paralela para cada pixel seria caro demais; e não o laço interno, que é sequencial por
+natureza). Cada thread escreve uma faixa disjunta da imagem: sem escrita compartilhada,
+sem <code class="in">critical</code>, sem <code class="in">atomic</code> no laço.</p>
+
+<h2>2. OpenMP básico</h2>
+<p>OpenMP é um conjunto de diretivas de compilador (<code class="in">#pragma omp ...</code>)
+para paralelismo com memória compartilhada, em modelo <em>fork-join</em>: o programa
+começa serial, abre uma equipe de threads na região paralela e volta a ser serial no fim.</p>
+<pre>gcc -O2 -o mandelbrot_seq mandelbrot.c -lm            # sequencial
+gcc -O2 -fopenmp -o mandelbrot_par mandelbrot.c -lm   # paralela</pre>
+<p>O truque do trabalho: <strong>é o mesmo arquivo-fonte</strong>. Sem
+<code class="in">-fopenmp</code> o compilador ignora os pragmas e gera o sequencial; com a
+flag, gera o paralelo. Mesma otimização <code class="in">-O2</code> nos dois — assim o
+T(1) de referência é honesto e o speed-up não sai inflado.</p>
+
+<h3>As diretivas que usamos (todas numa linha!)</h3>
+<pre>#pragma omp parallel for schedule(runtime) reduction(+:checksum)</pre>
+<ul>
+  <li><code class="in">parallel for</code>: divide as iterações do laço <code class="in">for</code>
+    seguinte entre as threads.</li>
+  <li><code class="in">schedule(runtime)</code>: quem decide como dividir é a escolha feita
+    em tempo de execução (via <code class="in">omp_set_schedule</code>, controlada pela
+    nossa flag <code class="in">-s/-c</code>). Isso permite comparar escalonadores
+    <strong>com o binário idêntico</strong>, sem recompilar — comparação justa.</li>
+  <li><code class="in">static</code>: divide as linhas em blocos contíguos fixos antes de
+    começar (rápido, mas se um bloco tem as linhas caras, aquela thread atrasa todas).</li>
+  <li><code class="in">dynamic,chunk</code>: threads livres pegam pacotes de
+    <code class="in">chunk</code> linhas de uma fila (balanceia, custa sincronização).</li>
+  <li><code class="in">guided</code>: começa com pacotes grandes e vai diminuindo.</li>
+  <li><code class="in">reduction(+:checksum)</code>: o checksum (soma das iterações, nossa
+    prova de corretude) é o único acumulador compartilhado. A redução dá uma cópia privada
+    a cada thread e soma tudo no fim — sem ela precisaríamos de <code class="in">atomic</code>,
+    que serializaria o laço quente.</li>
+  <li>Variáveis declaradas <strong>dentro</strong> do laço (<code class="in">x, cr, ci, it</code>)
+    são automaticamente privadas por thread. É a forma mais segura de evitar
+    compartilhamento acidental.</li>
+  <li><code class="in">OMP_PLACES=cores</code> + <code class="in">OMP_PROC_BIND=close</code>:
+    prendem cada thread ao seu núcleo (o SO não fica migrando thread de núcleo, o que
+    embaralharia os tempos).</li>
+</ul>
+
+<h2>3. O código, parte por parte</h2>
+<h3><code class="in">mandel_ponto(cr, ci, max_iter)</code> — o núcleo</h3>
+<p>Executa <code class="in">z = z² + c</code> e devolve em quantas iterações o ponto escapou
+(compara <code class="in">zr*zr + zi*zi &lt;= 4.0</code>, isto é, |z|² ≤ 4 — evita a raiz
+quadrada, que é cara). É aqui que nasce o desbalanceamento: retorno pequeno = pixel barato,
+retorno = max_iter = pixel caro.</p>
+<h3><code class="in">main</code> — argumentos e laço</h3>
+<p>Lê <code class="in">-w -a -i -t -s -c -o</code> (largura, altura, max_iter, threads,
+scheduler, chunk, imagem de saída). Calcula o passo no plano complexo <strong>uma vez, fora
+do laço</strong>. Roda o laço duplo (linhas fora, colunas dentro) com o pragma do item 2,
+acumulando o checksum. Imprime uma linha CSV:
+<code class="in">modo;threads;schedule;chunk;largura;altura;max_iter;tempo;checksum</code>.
+O checksum <strong>7591159335</strong> saiu idêntico em todas as execuções da forte — prova
+de que o paralelo calcula exatamente o mesmo que o sequencial.</p>
+<h3>Scripts</h3>
+<ul>
+  <li><code class="in">medir.sh</code>: roda cada configuração 3 vezes e guarda a
+    <strong>mediana</strong> (não a média — uma execução contaminada distorce a média, mas
+    não a mediana). Gera <code class="in">resultados/forte.csv</code>,
+    <code class="in">fraca.csv</code> e <code class="in">sched.csv</code>.</li>
+  <li><code class="in">ht.sh</code>: só anexa o ponto de 16 threads aos CSVs já existentes.</li>
+  <li><code class="in">analisar.sh</code>: calcula speed-up e eficiência e avisa se algum
+    checksum divergir.</li>
+  <li><code class="in">job.sh</code> / <code class="in">ht.sh</code>: enviados com
+    <code class="in">sbatch --exclusive</code> (nó dedicado — sem outro grupo dividindo a
+    máquina, os tempos valem para speed-up).</li>
+  <li><code class="in">graficos.py</code>: desenha as figuras a partir dos mesmos CSVs.</li>
+</ul>
+
+<h2>4. Metodologia (como medir direito)</h2>
+<ul>
+  <li>Máquina: nó <strong>atlantica05</strong> — 2&times; Xeon E5520 2,27 GHz
+    (8 núcleos físicos / 16 threads), 15 GB RAM, gcc 9.4.0, <code class="in">-O2</code>.</li>
+  <li>T(1) do <strong>binário sequencial real</strong>, 1 núcleo.</li>
+  <li>Forte: imagem fixa 4096&times;4096, threads 1, 2, 4, 8 (+ 16 HT), 3 escalonadores.</li>
+  <li>Fraca: 1024&times;1024 pixels <strong>por thread</strong>, lado escalado por
+    √p sobre a <strong>mesma</strong> janela (preserva a distribuição do custo).</li>
+</ul>
+
+<h2>5. Resultados</h2>
+<h3>Escalabilidade forte (S = T<sub>seq</sub>/T, E = S/p, T<sub>seq</sub> = 43,836 s)</h3>
+<table>
+<tr><th>Versão</th><th>Threads</th><th>Tempo (s)</th><th>Speed-up</th><th>Eficiência (%)</th></tr>
+<tr><td>sequencial</td><td>1</td><td>43,836</td><td>—</td><td>—</td></tr>
+<tr><td>dynamic,1</td><td>1</td><td>48,268</td><td>0,91</td><td>90,8</td></tr>
+<tr><td>dynamic,1</td><td>2</td><td>24,097</td><td>1,82</td><td>91,0</td></tr>
+<tr><td>dynamic,1</td><td>4</td><td>12,153</td><td>3,61</td><td>90,2</td></tr>
+<tr><td>dynamic,1</td><td>8</td><td>6,350</td><td>6,90</td><td>86,3</td></tr>
+<tr><td>dynamic,1</td><td>16</td><td>3,632</td><td>12,07</td><td>75,4</td></tr>
+<tr><td>static</td><td>8</td><td>14,937</td><td>2,93</td><td>36,7</td></tr>
+<tr><td>static</td><td>16</td><td>9,200</td><td>4,76</td><td>29,8</td></tr>
+<tr><td>guided</td><td>8</td><td>9,603</td><td>4,56</td><td>57,1</td></tr>
+<tr><td>guided</td><td>16</td><td>5,055</td><td>8,67</td><td>54,2</td></tr>
+</table>
+<div class="box"><span class="q">Leitura:</span> o <code class="in">dynamic,1</code> é quase
+linear até 8 threads (86,3%) porque redistribui linhas caras sob demanda. O
+<code class="in">static</code> colapsa (36,7% em 8 threads): os blocos contíguos entregam as
+linhas centrais caras sempre às mesmas threads, e o tempo total é ditado pela mais lenta
+(barreira implícita do <code class="in">for</code>). O <code class="in">guided</code> fica no
+meio (57,1%). Com 1 thread o paralelo (48,3 s) é ~10% mais lento que o sequencial: é o
+sobrecusto do runtime OpenMP.</div>
+
+<h3>Escalabilidade fraca (E = T<sub>seq</sub>/T)</h3>
+<table>
+<tr><th>Threads</th><th>Imagem</th><th>Mpixels</th><th>Tempo (s)</th><th>Speed-up</th><th>Eficiência (%)</th></tr>
+<tr><td>1</td><td>1024&times;1024</td><td>1,05</td><td>2,747</td><td>1,00</td><td>100,0</td></tr>
+<tr><td>2</td><td>1448&times;1448</td><td>2,10</td><td>3,017</td><td>1,82</td><td>91,0</td></tr>
+<tr><td>4</td><td>2048&times;2048</td><td>4,19</td><td>3,042</td><td>3,61</td><td>90,3</td></tr>
+<tr><td>8</td><td>2896&times;2896</td><td>8,39</td><td>3,177</td><td>6,92</td><td>86,5</td></tr>
+<tr><td>16</td><td>4096&times;4096</td><td>16,78</td><td>3,632</td><td>12,10</td><td>75,6</td></tr>
+</table>
+<div class="box"><span class="q">Leitura:</span> o tempo quase não cresce até 8 threads
+(86,5%) — há mais linhas por thread, então a parte serial pesa menos; o preço é mais
+pressão sobre cache/memória. Em 16 threads cai a 75,6%: efeito HT, não falta de paralelismo.</div>
+
+<h3>Hiper-threads (o ponto 16)</h3>
+<p>O dynamic sobe de S=6,90 (8 threads) para <strong>S=12,07 (16 threads)</strong>, com a
+eficiência indo de 86,3% a 75,4%: a segunda thread de cada núcleo divide as unidades de
+execução, então o ganho é sublinear — o limite passa a ser o núcleo, não a distribuição
+de carga. É o ponto 16 das figuras.</p>
+
+<h3>Escalonadores e chunk (8 threads, 4096²)</h3>
+<table>
+<tr><th>schedule</th><th>Chunk</th><th>Tempo (s)</th><th>Relativo ao melhor</th></tr>
+<tr><td>static</td><td>padrão</td><td>14,948</td><td>2,35×</td></tr>
+<tr><td>static</td><td>1</td><td>6,365</td><td>1,00×</td></tr>
+<tr><td>static</td><td>8</td><td>6,370</td><td>1,00×</td></tr>
+<tr><td>static</td><td>64</td><td>6,686</td><td>1,05×</td></tr>
+<tr><td>dynamic</td><td>1</td><td>6,350</td><td>1,00×</td></tr>
+<tr><td>dynamic</td><td>8</td><td>6,350</td><td>1,00×</td></tr>
+<tr><td>dynamic</td><td>64</td><td>6,478</td><td>1,02×</td></tr>
+<tr><td>guided</td><td>padrão</td><td>9,590</td><td>1,51×</td></tr>
+<tr><td>guided</td><td>1</td><td>9,491</td><td>1,49×</td></tr>
+</table>
+<div class="box"><span class="q">Leitura:</span> grão unitário cura o static (6,37 s ≈ dynamic);
+chunk 64 reagrupa linhas caras e piora; guided fica ~1,5× pior porque seu decrescimento
+geométrico não acompanha a concentração do custo no centro. Padrão adotado:
+<code class="in">dynamic,1</code>.</div>
+
+<h2>6. Como reproduzir</h2>
+<pre>git clone -b correcoes-build-e-graficos https://github.com/gacherubini/paralela-t1.git
+cd paralela-t1
+make teste          # confere checksum + imagem (tem que dar OK)
+sbatch job.sh       # medição principal (nó exclusivo)
+sbatch ht.sh        # ponto 16 threads (HT)
+python3 graficos.py resultados   # figuras em PDF vetorial + PNG</pre>
+
+<h2>7. Para a apresentação (o que cada um precisa saber)</h2>
+<ul>
+  <li><strong>Por que Mandelbrot?</strong> pixels independentes + custo por pixel
+    imprevisível → desbalanceamento real para o OpenMP resolver.</li>
+  <li><strong>Por que linhas e não pixels?</strong> granularidade: abrir região paralela
+    por pixel custaria mais que o cálculo; por linha, cada thread escreve faixa própria.</li>
+  <li><strong>Por que dynamic ganha?</strong> fila sob demanda corrige o desbalanceamento;
+    static prende linhas caras às mesmas threads.</li>
+  <li><strong>O que é o ponto 16?</strong> hyper-threads: mais throughput (12,07), menos
+    eficiência (75,4%) — núcleo compartilhado.</li>
+  <li><strong>Como provam que está certo?</strong> checksum idêntico + imagens binárias iguais.</li>
+</ul>
+
+</body>
+</html>
